@@ -56,7 +56,7 @@ define OPTIONS
  - arm64 no-secty dev app-dev device-dev ui-dev delayed-start -
  - nats-bus mqtt-broker mqtt-verbose nanomq -
  - taf-secty taf-no-secty taf-perf taf-perf-no-secty -
- - ds-onvif-camera ds-usb-camera ds-bacnet-ip ds-bacnet-mstp ds-modbus ds-mqtt ds-rest ds-snmp ds-virtual ds-llrp -
+ - ds-onvif-camera ds-usb-camera ds-bacnet-ip ds-bacnet-mstp ds-modbus ds-mqtt ds-rest ds-snmp ds-virtual ds-llrp ds-opcua -
  - ds-coap ds-gpio ds-uart ds-s7 -
  - asc-http asc-mqtt asc-sample asc-metrics as-llrp as-record-replay asc-ex-mqtt -
  - modbus-sim zero-trust no-cleanup -
@@ -113,6 +113,7 @@ ifeq (device-dev, $(filter device-dev,$(ARGS)))
 	export DEVICE_ONVIFCAM_VERSION=0.0.0-dev
 	export DEVICE_USBCAM_VERSION=0.0.0-dev
 	export DEVICE_S7_VERSION=0.0.0-dev
+	export DEVICE_OPCUA_VERSION=0.0.0-dev
 endif
 ifeq (ui-dev, $(filter ui-dev,$(ARGS)))
 	export UI_REPOSITORY=edgexfoundry
@@ -283,6 +284,34 @@ ifeq (ds-modbus, $(filter ds-modbus,$(ARGS)))
 		# add runtime token config for delayed-start if specified
 		ifeq (delayed-start, $(filter delayed-start,$(ARGS)))
 			ext_file:= $(shell ZERO_TRUST="$(MAKE_ZERO_TRUST)" GEN_EXT_DIR="$(GEN_EXT_DIR)" ./gen_runtime_token_config_compose_ext.sh device-modbus)
+			COMPOSE_FILES:=$(COMPOSE_FILES) -f $(ext_file)
+		endif
+	endif
+endif
+ifeq (ds-opcua, $(filter ds-opcua,$(ARGS)))
+	COMPOSE_FILES:=$(COMPOSE_FILES) -f add-device-opcua.yml
+	ifneq (no-secty, $(filter no-secty,$(ARGS)))
+		ifeq ($(TOKEN_LIST),)
+			TOKEN_LIST:=device-opcua
+		else
+			TOKEN_LIST:=$(TOKEN_LIST),device-opcua
+		endif
+		ifeq ($(KNOWN_SECRETS_LIST),)
+			KNOWN_SECRETS_LIST:=message-bus[device-opcua]
+		else
+			KNOWN_SECRETS_LIST:=$(KNOWN_SECRETS_LIST),message-bus[device-opcua]
+		endif
+		PROXY_ROUTE:=device-opcua.http://edgex-device-opcua:59997
+		ifeq ($(EXTRA_PROXY_ROUTE_LIST),)
+			EXTRA_PROXY_ROUTE_LIST:=$(PROXY_ROUTE)
+		else
+			EXTRA_PROXY_ROUTE_LIST:=$(EXTRA_PROXY_ROUTE_LIST),$(PROXY_ROUTE)
+		endif
+		extension_file:= $(shell ZERO_TRUST="$(MAKE_ZERO_TRUST)" GEN_EXT_DIR="$(GEN_EXT_DIR)" ./gen_secure_compose_ext.sh device-opcua)
+		COMPOSE_FILES:=$(COMPOSE_FILES) -f $(extension_file)
+		# add runtime token config for delayed-start if specified
+		ifeq (delayed-start, $(filter delayed-start,$(ARGS)))
+			ext_file:= $(shell ZERO_TRUST="$(MAKE_ZERO_TRUST)" GEN_EXT_DIR="$(GEN_EXT_DIR)" ./gen_runtime_token_config_compose_ext.sh device-opcua)
 			COMPOSE_FILES:=$(COMPOSE_FILES) -f $(ext_file)
 		endif
 	endif
@@ -816,12 +845,12 @@ endif
 
 # Build compose for TAF secure testing (ignore all other compose file options)
 ifeq (taf-secty, $(filter taf-secty,$(ARGS)))
-	TOKEN_LIST:=app-http-export,app-mqtt-export,app-functional-tests,app-scalability-test-mqtt-export,app-sample,device-modbus,app-external-mqtt-trigger,device-onvif-camera
+	TOKEN_LIST:=app-http-export,app-mqtt-export,app-functional-tests,app-scalability-test-mqtt-export,app-sample,device-modbus,app-external-mqtt-trigger,device-onvif-camera,device-opcua
 	# Note that the services in this list should be separated by ';', but that causes issues with build scripts, so
 	# have to list them individually.
 	KNOWN_SECRETS_LIST:=postgres[app-rules-engine],postgres[app-http-export],postgres[app-mqtt-export],postgres[app-scalability-test-mqtt-export],postgres[app-sample]
-	KNOWN_SECRETS_LIST:=$(KNOWN_SECRETS_LIST),message-bus[app-rules-engine],message-bus[app-http-export],message-bus[app-mqtt-export],message-bus[app-external-mqtt-trigger],message-bus[app-scalability-test-mqtt-export],message-bus[app-sample],message-bus[device-modbus],message-bus[device-rest],message-bus[device-virtual],message-bus[device-onvif-camera]
-	EXTRA_PROXY_ROUTE_LIST:=device-modbus.http://edgex-device-modbus:59901
+	KNOWN_SECRETS_LIST:=$(KNOWN_SECRETS_LIST),message-bus[app-rules-engine],message-bus[app-http-export],message-bus[app-mqtt-export],message-bus[app-external-mqtt-trigger],message-bus[app-scalability-test-mqtt-export],message-bus[app-sample],message-bus[device-modbus],message-bus[device-rest],message-bus[device-virtual],message-bus[device-onvif-camera],message-bus[device-opcua]
+	EXTRA_PROXY_ROUTE_LIST:=device-modbus.http://edgex-device-modbus:59901,device-opcua.http://edgex-device-opcua:59997
 
 	COMPOSE_FILES:= \
 		-f docker-compose-base.yml \
@@ -837,6 +866,7 @@ ifeq (taf-secty, $(filter taf-secty,$(ARGS)))
 		-f add-device-rest.yml \
 		-f add-device-modbus.yml \
 		-f add-device-onvif-camera.yml \
+		-f add-device-opcua.yml \
 		-f add-taf-device-services-mods.yml \
 		-f add-mqtt-broker-mosquitto.yml \
 		-f add-modbus-simulator.yml \
@@ -864,9 +894,11 @@ ifeq (taf-secty, $(filter taf-secty,$(ARGS)))
 		device-virtual device-virtual " ${CP_FLAGS} --configDir=CONFIG_DIR_PLACE_HOLDER")
 	ds_modbus_ext:= $(shell ZERO_TRUST="$(MAKE_ZERO_TRUST)" GEN_EXT_DIR="$(GEN_EXT_DIR)" ./gen_secure_compose_ext.sh device-modbus \
 		device-modbus device-modbus " ${CP_FLAGS} --configDir=CONFIG_DIR_PLACE_HOLDER")
+	ds_opcua_ext:= $(shell ZERO_TRUST="$(MAKE_ZERO_TRUST)" GEN_EXT_DIR="$(GEN_EXT_DIR)" ./gen_secure_compose_ext.sh device-opcua \
+		device-opcua device-opcua " ${CP_FLAGS} --configDir=CONFIG_DIR_PLACE_HOLDER")
 	ds_camera_ext:= $(shell ZERO_TRUST="$(MAKE_ZERO_TRUST)" GEN_EXT_DIR="$(GEN_EXT_DIR)" ./gen_secure_compose_ext.sh device-onvif-camera)
 	COMPOSE_FILES:=$(COMPOSE_FILES) -f $(asc_http_export_ext) -f $(asc_mqtt_export_ext) -f $(asc_external_mqtt_trigger_ext) -f $(scalability_mqtt_export_ext) -f $(asc_sample_ext)
-	COMPOSE_FILES:=$(COMPOSE_FILES) -f $(ds_virtual_ext) -f $(ds_rest_ext) -f $(ds_modbus_ext) -f $(ds_camera_ext)
+	COMPOSE_FILES:=$(COMPOSE_FILES) -f $(ds_virtual_ext) -f $(ds_rest_ext) -f $(ds_modbus_ext) -f $(ds_opcua_ext) -f $(ds_camera_ext)
 else
 	ifeq (nanomq, $(filter nanomq,$(ARGS)))
 		BROKER_YAML=add-mqtt-broker-nanomq.yml
@@ -891,6 +923,7 @@ else
 			-f add-device-rest.yml \
 			-f add-device-modbus.yml \
 			-f add-device-onvif-camera.yml \
+			-f add-device-opcua.yml \
 			-f add-taf-device-services-mods.yml \
 			-f ${BROKER_YAML} \
 			-f add-modbus-simulator.yml \
@@ -905,7 +938,7 @@ else
 			# have to list them individually.
 			KNOWN_SECRETS_LIST:=postgres[app-rules-engine],postgres[app-mqtt-export]
 			KNOWN_SECRETS_LIST:=$(KNOWN_SECRETS_LIST),message-bus[app-rules-engine],message-bus[app-mqtt-export],message-bus[device-rest],message-bus[device-virtual]
-			EXTRA_PROXY_ROUTE_LIST:=device-modbus.http://edgex-device-modbus:59901,device-rest.http://edgex-device-rest:59986
+			EXTRA_PROXY_ROUTE_LIST:=device-rest.http://edgex-device-rest:59986
 
     		COMPOSE_FILES:= \
 				-f docker-compose-base.yml \
@@ -963,6 +996,7 @@ define COMPOSE_DOWN
 		-f add-device-bacnet-mstp.yml \
 		-f add-device-onvif-camera.yml \
 		-f add-device-usb-camera.yml \
+		-f add-device-opcua.yml \
 		-f add-device-modbus.yml \
 		-f add-device-mqtt.yml \
 		-f add-secure-device-mqtt.yml \

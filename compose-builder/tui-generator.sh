@@ -70,6 +70,7 @@ declare -A deviceServiceDesc=(
     [ds-rest]="Include REST Device Service"
     [ds-snmp]="Include SNMP Device Service"
     [ds-virtual]="Include Virtual Device Service"
+    [ds-opcua]="Include OPC UA Device Service"
     [ds-coap]="Include CoAP Device Service"
     [ds-gpio]="Include GPIO Device Service"
     [ds-uart]="Include UART Device Service"
